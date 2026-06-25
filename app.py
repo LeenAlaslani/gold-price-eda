@@ -1,72 +1,48 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 
 
-# this make the page wider
-# because i have charts and i dont want them to look very small
-
+# making the page wider so charts look better
 st.set_page_config(
     page_title="Gold Price EDA",
     layout="wide"
 )
 
 
-# here i read the final csv file
-# i use this file because i already cleaned it in the notebook
-# and i already made the new columns like Abs_Change and Event_Group
-# so i dont need to repeat the full cleaning again here
-
+# reading the final data
+# i use this because i already cleaned it in the notebook
 data = pd.read_csv("gold_final.csv")
 
 
-# when i save the data as csv the date return like a text
-# but for the line chart i need python to understand it as a real date
-# so i change the Date column again
-
+# date need to be real datetime not text
 data["Date"] = pd.to_datetime(data["Date"])
 
 
-# sometimes true and false may come from csv as text
-# so here i make sure Has_Event is really boolean
-# boolean mean it only have True or False
-
+# making sure Has_Event is boolean
 if data["Has_Event"].dtype != bool:
-
     data["Has_Event"] = (
         data["Has_Event"]
         .astype(str)
         .str.lower()
-        .map({
-            "true": True,
-            "false": False
-        })
+        .map({"true": True, "false": False})
     )
 
 
-# this is the main title in the app
-
+# start title
 st.title("Gold Price EDA")
 
-
-# this is a small explain about the app
-# the app is not predicting the gold price
-# it only show the data and let the user explore the results
-
 st.write(
-    "This app show gold prices and how the gold movement "
-    "was different with economic events."
+    "This app show gold prices and some simple analysis "
+    "about gold movement and economic events."
 )
 
 
-# i put the filters in the sidebar
-# sidebar is the part that show in the left side of the page
+# -------------------------
+# sidebar filters
+# -------------------------
 
 st.sidebar.title("Filters")
-
-
-# first i collect all the years from my dataset
-# sorted put them in the correct order
-# then i add All in the beginning so the user can use all years together
 
 years = sorted(
     data["Year"]
@@ -78,173 +54,228 @@ years = sorted(
 
 year_options = ["All"] + years
 
-
-# this make a select box for the year
-# the user can choose one year or choose All
-
 selected_year = st.sidebar.selectbox(
     "Choose the year",
     year_options
 )
 
+event_choice = st.sidebar.selectbox(
+    "Choose event days",
+    ["All days", "Event days", "No event days"]
+)
 
-# here i copy the full data
-# i use a copy because later i will remove some rows based on the filters
-# and i dont want to change the original data itself
 
+# making filtered data
 filtered_data = data.copy()
 
-
-# if the user choose one year
-# i only keep the rows from this year
-# but if the user choose All i dont remove anything
-
 if selected_year != "All":
-
     filtered_data = filtered_data[
         filtered_data["Year"] == selected_year
     ]
 
-
-# this is the second filter
-# All days mean use every row
-# Event days mean only rows where Has_Event is True
-# No event days mean only rows where Has_Event is False
-
-event_choice = st.sidebar.selectbox(
-    "Choose event days",
-    [
-        "All days",
-        "Event days",
-        "No event days"
-    ]
-)
-
-
-# here i apply the event filter
-
 if event_choice == "Event days":
-
     filtered_data = filtered_data[
         filtered_data["Has_Event"] == True
     ]
 
-
 elif event_choice == "No event days":
-
     filtered_data = filtered_data[
         filtered_data["Has_Event"] == False
     ]
 
 
-# maybe the user choose a filter and there is no rows
-# without this check the charts may give an error
-# so i stop the app and show a message instead
-
+# if no rows after filter stop here
 if filtered_data.empty:
-
-    st.warning("There is no data for this filter.")
-
+    st.warning("No data for this filter.")
     st.stop()
 
 
-# now i make three columns beside each other
-# these are only quick numbers to summarize the selected data
-# they will change every time the user change a filter
+# -------------------------
+# small numbers
+# -------------------------
 
-col1, col2, col3 = st.columns(3)
+st.subheader("Quick Numbers")
 
-
-# average price mean i add all gold prices in the filtered data
-# then divide them by the number of rows
-# :,.2f make the number easier to read and keep two decimals
+col1, col2, col3, col4 = st.columns(4)
 
 col1.metric(
     "Average Price",
     f'{filtered_data["Price"].mean():,.2f}'
 )
 
-
-# this show the highest gold price inside the selected rows
-# for example if the user choose 2020 it only use 2020 prices
-
 col2.metric(
     "Highest Price",
     f'{filtered_data["Price"].max():,.2f}'
 )
-
-
-# Abs_Change is the movement size
-# it does not care if gold moved up or down
-# for example +2 and -2 both become movement of 2
-# i add the percent sign because this value is a percentage
 
 col3.metric(
     "Average Movement",
     f'{filtered_data["Abs_Change"].mean():.2f}%'
 )
 
+col4.metric(
+    "Average Event Count",
+    f'{filtered_data["Event_Count"].mean():.2f}'
+)
 
-# now i make the first chart
-# this chart show how gold price changed with time
+
+# -------------------------
+# chart 1 line chart
+# -------------------------
 
 st.subheader("Gold Price Over Time")
 
+line_df = filtered_data.sort_values("Date")
 
-# first i sort the dates from old to new
-# then i put Date as the index
-# streamlit will use it automatically as the horizontal axis
-
-price_chart = (
-    filtered_data
-    .sort_values("Date")
-    .set_index("Date")[["Price"]]
+fig_line = px.line(
+    line_df,
+    x="Date",
+    y="Price",
+    title="Gold Price Over Time"
 )
 
+st.plotly_chart(fig_line, use_container_width=True)
 
-# this create the line chart
 
-st.line_chart(
-    price_chart,
-    use_container_width=True
+# -------------------------
+# chart 2 histogram
+# -------------------------
+
+st.subheader("Distribution of Gold Prices")
+
+fig_hist = px.histogram(
+    filtered_data,
+    x="Price",
+    nbins=30,
+    title="Distribution of Gold Prices"
 )
 
+st.plotly_chart(fig_hist, use_container_width=True)
 
-# now i make the event group chart
-# Event_Group has:
-# No Event
-# 1-3 Events
-# 4+ Events
-#
-# i calculate the average movement for every group
-# if the user choose No event days only one group will show
-# this is normal because other event groups was removed by the filter
+
+# -------------------------
+# chart 3 pie chart
+# -------------------------
+
+st.subheader("Event Days vs No Event Days")
+
+event_count_df = (
+    filtered_data["Has_Event"]
+    .value_counts()
+    .reset_index()
+)
+
+event_count_df.columns = ["Has_Event", "Count"]
+
+event_count_df["Has_Event"] = event_count_df["Has_Event"].map({
+    True: "Event Days",
+    False: "No Event Days"
+})
+
+fig_pie = px.pie(
+    event_count_df,
+    names="Has_Event",
+    values="Count",
+    title="Event Days vs No Event Days"
+)
+
+st.plotly_chart(fig_pie, use_container_width=True)
+
+
+# -------------------------
+# chart 4 bar event group
+# -------------------------
 
 st.subheader("Gold Movement by Event Group")
 
-
-event_chart = (
+event_group_df = (
     filtered_data
     .groupby("Event_Group")["Abs_Change"]
     .mean()
+    .reset_index()
 )
 
-
-# this create the bar chart
-
-st.bar_chart(
-    event_chart,
-    use_container_width=True
+fig_event_group = px.bar(
+    event_group_df,
+    x="Event_Group",
+    y="Abs_Change",
+    title="Average Gold Movement by Event Group",
+    text_auto=True
 )
 
+st.plotly_chart(fig_event_group, use_container_width=True)
 
-# now i show the biggest gold movement days
-# nlargest choose the highest 10 values from Abs_Change
-# so it will show days with the biggest movement
-# it can be positive or negative because Abs_Change removed the sign
+
+# -------------------------
+# chart 5 movement by year
+# -------------------------
+
+st.subheader("Gold Movement by Year")
+
+year_df = (
+    filtered_data
+    .groupby("Year")["Abs_Change"]
+    .mean()
+    .reset_index()
+)
+
+fig_year = px.bar(
+    year_df,
+    x="Year",
+    y="Abs_Change",
+    title="Average Gold Movement by Year",
+    text_auto=True
+)
+
+st.plotly_chart(fig_year, use_container_width=True)
+
+
+# -------------------------
+# chart 6 movement by month
+# -------------------------
+
+st.subheader("Gold Movement by Month")
+
+month_df = (
+    filtered_data
+    .groupby("Month")["Abs_Change"]
+    .mean()
+    .reset_index()
+)
+
+fig_month = px.bar(
+    month_df,
+    x="Month",
+    y="Abs_Change",
+    title="Average Gold Movement by Month",
+    text_auto=True
+)
+
+st.plotly_chart(fig_month, use_container_width=True)
+
+
+# -------------------------
+# chart 7 scatter plot
+# -------------------------
+
+st.subheader("Volume and Gold Movement")
+
+fig_scatter = px.scatter(
+    filtered_data,
+    x="Vol_K",
+    y="Abs_Change",
+    title="Volume vs Gold Movement",
+    hover_data=["Date", "Price", "Event_Group"]
+)
+
+st.plotly_chart(fig_scatter, use_container_width=True)
+
+
+# -------------------------
+# top 10 table
+# -------------------------
 
 st.subheader("Biggest Gold Movement Days")
-
 
 top_days = filtered_data.nlargest(
     10,
@@ -252,6 +283,7 @@ top_days = filtered_data.nlargest(
 )[
     [
         "Date",
+        "Price",
         "Change_percent",
         "Abs_Change",
         "Event_Count",
@@ -259,27 +291,8 @@ top_days = filtered_data.nlargest(
     ]
 ].copy()
 
-
-# the date was showing 00:00:00
-# this time is not useful because the dataset is daily
-# so i only keep the year month and day
-
-top_days["Date"] = (
-    top_days["Date"]
-    .dt.strftime("%Y-%m-%d")
-)
-
-
-# after selecting the largest rows
-# the old row numbers was still showing like 962 and 799
-# these numbers are only the old index from the dataset
-# so i remove them and make a new simple index
-
+top_days["Date"] = top_days["Date"].dt.strftime("%Y-%m-%d")
 top_days = top_days.reset_index(drop=True)
-
-
-# rename the columns only for the app
-# because spaces are easier to read than underscore
 
 top_days = top_days.rename(
     columns={
@@ -290,17 +303,20 @@ top_days = top_days.rename(
     }
 )
 
-
-# show the final table
-
-st.table(top_days)
+st.dataframe(top_days, use_container_width=True)
 
 
-# this is a final small note
-# because the app show relationships in the data
-# but it does not prove that economic events caused every gold movement
+# -------------------------
+# raw data
+# -------------------------
+
+with st.expander("Show filtered data"):
+    show_df = filtered_data.copy()
+    show_df["Date"] = show_df["Date"].dt.strftime("%Y-%m-%d")
+    st.dataframe(show_df, use_container_width=True)
+
 
 st.caption(
-    "The app shows patterns in the dataset, "
-    "but it does not prove that economic events caused every gold change."
+    "This app show patterns in the data, but it does not prove "
+    "that events directly caused every gold price movement."
 )
