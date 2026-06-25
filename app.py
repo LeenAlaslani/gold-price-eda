@@ -1,756 +1,585 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 
-
-# i make the page wide because i want to put two charts beside each other
-# this make the app look more like dashboard and not one very long page
-
+# ----------------------------
+# page settings
+# ----------------------------
 st.set_page_config(
-    page_title="Gold Price EDA",
+    page_title="Gold Price EDA Dashboard",
     page_icon="📊",
     layout="wide"
 )
 
-
-# these colors will be used in the full app
-# i used gold colors because the project is about gold
-# green will mean up and red will mean down
-# gray will be used for days that dont have events
-
-GOLD = "#D4A017"
-LIGHT_GOLD = "#F2D675"
-DARK_GOLD = "#8A6914"
-CHARCOAL = "#30343F"
-SOFT_GRAY = "#CBD1DA"
-GREEN = "#3A8D63"
-RED = "#C45156"
-BLUE = "#4776B4"
-
-
-# this only change small things in the streamlit page
-# i wanted the quick numbers to look like small cards
-# the css part is only for the look and it does not change the data
-
-st.markdown(
-    """
-    <style>
-
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 3rem;
+# ----------------------------
+# custom style
+# ----------------------------
+st.markdown("""
+<style>
+    .main {
+        background-color: #f8f6f1;
     }
 
-    [data-testid="stMetric"] {
-        background-color: #FAF7EF;
-        border: 1px solid #E6D8AF;
-        border-radius: 12px;
-        padding: 18px;
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1f1f1f 0%, #2a2a2a 100%);
+        color: white;
     }
 
-    [data-testid="stMetricLabel"] {
-        font-size: 15px;
+    section[data-testid="stSidebar"] .stSelectbox label,
+    section[data-testid="stSidebar"] .stMarkdown,
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3,
+    section[data-testid="stSidebar"] p {
+        color: white !important;
     }
 
-    [data-testid="stMetricValue"] {
-        color: #8A6914;
+    .hero-box {
+        background: linear-gradient(135deg, #1f1f1f 0%, #2f2f2f 100%);
+        padding: 28px;
+        border-radius: 20px;
+        color: white;
+        margin-bottom: 18px;
+        border: 1px solid #d4a017;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.12);
     }
 
-    div[data-testid="stSidebar"] {
-        background-color: #F7F4EC;
+    .hero-title {
+        font-size: 38px;
+        font-weight: 800;
+        margin-bottom: 8px;
+        color: #f1c75b;
     }
 
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+    .hero-text {
+        font-size: 16px;
+        color: #f2f2f2;
+        line-height: 1.8;
+    }
 
+    .mini-card {
+        background: white;
+        border-radius: 18px;
+        padding: 18px 20px;
+        border-left: 6px solid #d4a017;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.06);
+        margin-bottom: 10px;
+    }
 
-# i read gold_final because this is the final data after cleaning
-# it already have the new columns that i made in the notebook
-# like Abs_Change Event_Group Year and Month
-# so i dont need to repeat the cleaning inside the app
+    .mini-title {
+        font-size: 14px;
+        color: #666;
+        margin-bottom: 6px;
+    }
 
-data = pd.read_csv("gold_final.csv")
+    .mini-value {
+        font-size: 34px;
+        font-weight: 800;
+        color: #1f1f1f;
+    }
 
+    .section-title {
+        font-size: 28px;
+        font-weight: 800;
+        color: #1f1f1f;
+        margin-top: 10px;
+        margin-bottom: 10px;
+    }
 
-# after saving as csv the date return as text
-# charts need a real date so i change it again here
+    .insight-box {
+        background: #fff8e7;
+        border: 1px solid #f1d27a;
+        border-radius: 16px;
+        padding: 14px 16px;
+        margin-top: 10px;
+        color: #3b2e10;
+    }
 
-data["Date"] = pd.to_datetime(data["Date"])
+    .small-note {
+        color: #666;
+        font-size: 13px;
+    }
 
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
 
-# i make sure year and month are numbers
-# this will help when the user choose the year from the filter
+    .stTabs [data-baseweb="tab"] {
+        background-color: #ece8df;
+        border-radius: 10px;
+        padding: 10px 18px;
+    }
 
-data["Year"] = data["Year"].astype(int)
-data["Month"] = data["Month"].astype(int)
+    .stTabs [aria-selected="true"] {
+        background-color: #d4a017 !important;
+        color: white !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
+# ----------------------------
+# load data
+# ----------------------------
+@st.cache_data
+def load_data():
+    data = pd.read_csv("gold_final.csv")
+    data["Date"] = pd.to_datetime(data["Date"])
 
-# sometimes true and false may return from csv like text
-# here i make sure Has_Event is real True or False
+    # just in case columns already موجودة / أو مو موجودة
+    if "Abs_Change" not in data.columns and "Change_percent" in data.columns:
+        data["Abs_Change"] = data["Change_percent"].abs()
 
-if data["Has_Event"].dtype != bool:
+    if "Year" not in data.columns:
+        data["Year"] = data["Date"].dt.year
 
-    data["Has_Event"] = (
-        data["Has_Event"]
-        .astype(str)
-        .str.lower()
-        .map({
-            "true": True,
-            "false": False
-        })
-    )
+    if "Month" not in data.columns:
+        data["Month"] = data["Date"].dt.month
 
+    if "Direction" not in data.columns and "Change_percent" in data.columns:
+        data["Direction"] = np.where(data["Change_percent"] > 0, "Up", "Down")
 
-# if Direction was not saved for any reason
-# i make it again using Change_percent
-# positive values become Up and negative values become Down
+    if "Has_Event" not in data.columns and "Event_Count" in data.columns:
+        data["Has_Event"] = data["Event_Count"] > 0
 
-if "Direction" not in data.columns:
+    if "Event_Group" not in data.columns and "Event_Count" in data.columns:
+        data["Event_Group"] = "No Event"
+        data.loc[data["Event_Count"].between(1, 3), "Event_Group"] = "1-3 Events"
+        data.loc[data["Event_Count"] >= 4, "Event_Group"] = "4+ Events"
 
-    data["Direction"] = "Down"
+    return data
 
-    data.loc[
-        data["Change_percent"] > 0,
-        "Direction"
-    ] = "Up"
+df = load_data()
 
+# ----------------------------
+# sidebar filters
+# ----------------------------
+st.sidebar.markdown("# Filters")
+st.sidebar.write("The charts and numbers will change when you pick different options.")
 
-# this new name is only for the pie chart
-# it is easier to understand than showing True and False
+year_options = ["All"] + sorted(df["Year"].dropna().unique().tolist())
+selected_year = st.sidebar.selectbox("Choose the year", year_options)
 
-data["Event_Label"] = data["Has_Event"].map({
-    True: "Event Days",
-    False: "No Event Days"
-})
+event_options = ["All days", "Event days", "No event days"]
+selected_event = st.sidebar.selectbox("Choose event days", event_options)
 
+direction_options = ["All directions", "Up only", "Down only"]
+selected_direction = st.sidebar.selectbox("Choose gold direction", direction_options)
 
-# i make month names because Mar is easier than only seeing number 3
-
-data["Month_Name"] = data["Date"].dt.strftime("%b")
-
-
-# main title and simple explain about the app
-
-st.title("Gold Price EDA Dashboard")
-
-st.write(
-    "This app show gold prices and make it more easy to compare "
-    "gold movement in economic event days and normal days."
-)
-
-
-# --------------------------------------------------
-# filters
-# --------------------------------------------------
-
-st.sidebar.title("Filters")
-
-st.sidebar.write(
-    "The charts and numbers will change when i select different options."
-)
-
-
-# i collect the years from the data and put them in order
-# All mean dont remove any year from the data
-
-years = sorted(
-    data["Year"]
-    .dropna()
-    .unique()
-    .tolist()
-)
-
-selected_year = st.sidebar.selectbox(
-    "Choose the year",
-    ["All"] + years
-)
-
-
-# this filter can keep all days
-# or only event days
-# or only days that did not have economic event
-
-event_choice = st.sidebar.selectbox(
-    "Choose event days",
-    [
-        "All days",
-        "Event days",
-        "No event days"
-    ]
-)
-
-
-# this filter checks if gold went up or down
-# this give the user one more simple thing to explore
-
-direction_choice = st.sidebar.selectbox(
-    "Choose gold direction",
-    [
-        "All directions",
-        "Up",
-        "Down"
-    ]
-)
-
-
-# i copy the data because i will remove some rows using the filters
-# i dont want the original data itself to change
-
-filtered_data = data.copy()
-
-
-# applying the year filter
+filtered = df.copy()
 
 if selected_year != "All":
+    filtered = filtered[filtered["Year"] == selected_year]
 
-    filtered_data = filtered_data[
-        filtered_data["Year"] == selected_year
-    ]
+if selected_event == "Event days":
+    filtered = filtered[filtered["Has_Event"] == True]
+elif selected_event == "No event days":
+    filtered = filtered[filtered["Has_Event"] == False]
 
+if selected_direction == "Up only":
+    filtered = filtered[filtered["Direction"] == "Up"]
+elif selected_direction == "Down only":
+    filtered = filtered[filtered["Direction"] == "Down"]
 
-# applying the event filter
-
-if event_choice == "Event days":
-
-    filtered_data = filtered_data[
-        filtered_data["Has_Event"] == True
-    ]
-
-elif event_choice == "No event days":
-
-    filtered_data = filtered_data[
-        filtered_data["Has_Event"] == False
-    ]
-
-
-# applying the direction filter
-
-if direction_choice != "All directions":
-
-    filtered_data = filtered_data[
-        filtered_data["Direction"] == direction_choice
-    ]
-
-
-# maybe some filter choices have no rows
-# if this happen i show a message instead of getting error in the charts
-
-if filtered_data.empty:
-
-    st.warning("There is no data for these filters.")
-
+# اذا الفلتر صار فاضي
+if filtered.empty:
+    st.warning("No data found with this filter. Change one of the options from the sidebar.")
     st.stop()
 
+# ----------------------------
+# useful summary numbers
+# ----------------------------
+avg_price = filtered["Price"].mean()
+highest_price = filtered["Price"].max()
+avg_move = filtered["Abs_Change"].mean()
+days_shown = len(filtered)
 
-# --------------------------------------------------
+event_share = filtered["Has_Event"].value_counts(normalize=True) * 100
+event_days_pct = event_share.get(True, 0)
+no_event_days_pct = event_share.get(False, 0)
+
+top_group = filtered.groupby("Event_Group")["Abs_Change"].mean().sort_values(ascending=False).index[0]
+
+# ----------------------------
+# hero section
+# ----------------------------
+st.markdown("""
+<div class="hero-box">
+    <div class="hero-title">Gold Price EDA Dashboard ✨</div>
+    <div class="hero-text">
+        This dashboard shows gold prices and makes it easier to compare gold movement in event days and normal days.
+        I also added filters so the charts change when I choose a year or type of days.
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ----------------------------
 # quick numbers
-# --------------------------------------------------
+# ----------------------------
+st.markdown('<div class="section-title">Quick Numbers</div>', unsafe_allow_html=True)
 
-st.subheader("Quick Numbers")
+c1, c2, c3, c4 = st.columns(4)
 
+with c1:
+    st.markdown(f"""
+    <div class="mini-card">
+        <div class="mini-title">Average Price</div>
+        <div class="mini-value">{avg_price:,.2f}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# four columns will show four simple numbers
-# all numbers change when the user change the filters
+with c2:
+    st.markdown(f"""
+    <div class="mini-card">
+        <div class="mini-title">Highest Price</div>
+        <div class="mini-value">{highest_price:,.2f}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-col1, col2, col3, col4 = st.columns(4)
+with c3:
+    st.markdown(f"""
+    <div class="mini-card">
+        <div class="mini-title">Average Movement</div>
+        <div class="mini-value">{avg_move:.2f}%</div>
+    </div>
+    """, unsafe_allow_html=True)
 
+with c4:
+    st.markdown(f"""
+    <div class="mini-card">
+        <div class="mini-title">Days Shown</div>
+        <div class="mini-value">{days_shown:,}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# average gold price in the selected data
+# ----------------------------
+# tabs
+# ----------------------------
+tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Events", "Patterns", "Data Table"])
 
-col1.metric(
-    "Average Price",
-    f'{filtered_data["Price"].mean():,.2f}'
-)
+# ==================================================
+# TAB 1 - OVERVIEW
+# ==================================================
+with tab1:
+    left, right = st.columns([2.2, 1])
 
-
-# highest gold price in the selected data
-
-col2.metric(
-    "Highest Price",
-    f'{filtered_data["Price"].max():,.2f}'
-)
-
-
-# Abs_Change show movement size
-# it does not care if the value was positive or negative
-
-col3.metric(
-    "Average Movement",
-    f'{filtered_data["Abs_Change"].mean():.2f}%'
-)
-
-
-# this just tell how many days is still inside the selected data
-
-col4.metric(
-    "Days Shown",
-    f'{len(filtered_data):,}'
-)
-
-
-# this function will be used for all charts
-# because i dont want to repeat the same design lines many times
-
-def clean_chart(fig, height=390):
-
-    fig.update_layout(
-        template="plotly_white",
-        height=height,
-        margin=dict(
-            l=20,
-            r=20,
-            t=25,
-            b=20
-        ),
-        font=dict(
-            family="Arial",
-            size=13,
-            color=CHARCOAL
-        ),
-        legend_title_text="",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="white"
-    )
-
-    return fig
-
-
-# --------------------------------------------------
-# first row
-# price chart and event pie
-# --------------------------------------------------
-
-left1, right1 = st.columns([1.7, 1])
-
-
-with left1:
-
-    st.subheader("Gold Price Over Time")
-
-    line_data = filtered_data.sort_values("Date")
-
-    # this is an area chart
-    # the line is gold and there is a light color under it
-    # because one price column is one line so it does not need many colors
-
-    fig_line = px.area(
-        line_data,
-        x="Date",
-        y="Price",
-        labels={
-            "Date": "Date",
-            "Price": "Gold Price"
-        }
-    )
-
-    fig_line.update_traces(
-        line=dict(
-            color=GOLD,
-            width=2
-        ),
-        fillcolor="rgba(212,160,23,0.18)",
-        hovertemplate=(
-            "Date: %{x|%Y-%m-%d}"
-            "<br>Price: %{y:,.2f}"
-            "<extra></extra>"
+    with left:
+        st.markdown("### Gold Price Over Time")
+        fig_line = px.line(
+            filtered.sort_values("Date"),
+            x="Date",
+            y="Price",
+            template="plotly_white"
         )
-    )
-
-    clean_chart(fig_line, height=430)
-
-    st.plotly_chart(
-        fig_line,
-        use_container_width=True
-    )
-
-
-with right1:
-
-    st.subheader("Event Days Share")
-
-    # i count event days and no event days
-    # after that i put them in a donut chart
-
-    event_count_data = (
-        filtered_data["Event_Label"]
-        .value_counts()
-        .reset_index()
-    )
-
-    event_count_data.columns = [
-        "Event Type",
-        "Days"
-    ]
-
-    fig_pie = px.pie(
-        event_count_data,
-        names="Event Type",
-        values="Days",
-        hole=0.55,
-        color="Event Type",
-        color_discrete_map={
-            "Event Days": GOLD,
-            "No Event Days": SOFT_GRAY
-        }
-    )
-
-    fig_pie.update_traces(
-        textposition="inside",
-        textinfo="percent+label",
-        hovertemplate=(
-            "%{label}"
-            "<br>Days: %{value}"
-            "<br>Percent: %{percent}"
-            "<extra></extra>"
+        fig_line.update_traces(
+            line=dict(color="#d4a017", width=2),
+            fill="tozeroy",
+            fillcolor="rgba(212,160,23,0.15)"
         )
-    )
+        fig_line.update_layout(
+            height=420,
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis_title="Date",
+            yaxis_title="Gold Price"
+        )
+        st.plotly_chart(fig_line, use_container_width=True)
 
-    clean_chart(fig_pie, height=430)
+    with right:
+        st.markdown("### Event Days Share")
+        donut_data = pd.DataFrame({
+            "Type": ["Event Days", "No Event Days"],
+            "Percent": [event_days_pct, no_event_days_pct]
+        })
+        fig_donut = px.pie(
+            donut_data,
+            names="Type",
+            values="Percent",
+            hole=0.55,
+            color="Type",
+            color_discrete_map={
+                "Event Days": "#d4a017",
+                "No Event Days": "#c2c8d1"
+            }
+        )
+        fig_donut.update_layout(
+            height=420,
+            margin=dict(l=10, r=10, t=10, b=10),
+            showlegend=False
+        )
+        fig_donut.update_traces(textinfo="percent+label")
+        st.plotly_chart(fig_donut, use_container_width=True)
 
-    fig_pie.update_layout(
-        showlegend=False
-    )
+    b1, b2 = st.columns(2)
 
-    st.plotly_chart(
-        fig_pie,
-        use_container_width=True
-    )
+    with b1:
+        st.markdown("### Distribution of Gold Prices")
+        fig_hist = px.histogram(
+            filtered,
+            x="Price",
+            color="Direction",
+            barmode="overlay",
+            opacity=0.65,
+            template="plotly_white",
+            color_discrete_map={
+                "Up": "#5a9e6f",
+                "Down": "#c76b6b"
+            }
+        )
+        fig_hist.update_layout(
+            height=360,
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis_title="Gold Price",
+            yaxis_title="Count"
+        )
+        st.plotly_chart(fig_hist, use_container_width=True)
 
+    with b2:
+        st.markdown("### Movement by Event Group")
+        group_move = filtered.groupby("Event_Group", as_index=False)["Abs_Change"].mean()
+        order_map = ["1-3 Events", "4+ Events", "No Event"]
+        group_move["sorter"] = group_move["Event_Group"].apply(lambda x: order_map.index(x) if x in order_map else 99)
+        group_move = group_move.sort_values("sorter")
 
-# --------------------------------------------------
-# second row
-# distribution and event group
-# --------------------------------------------------
+        fig_bar_group = px.bar(
+            group_move,
+            x="Event_Group",
+            y="Abs_Change",
+            text="Abs_Change",
+            template="plotly_white",
+            color="Event_Group",
+            color_discrete_map={
+                "1-3 Events": "#d4a017",
+                "4+ Events": "#9a7a14",
+                "No Event": "#b8bec8"
+            }
+        )
+        fig_bar_group.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+        fig_bar_group.update_layout(
+            height=360,
+            margin=dict(l=10, r=10, t=10, b=10),
+            showlegend=False,
+            xaxis_title="Event Group",
+            yaxis_title="Average Movement %"
+        )
+        st.plotly_chart(fig_bar_group, use_container_width=True)
 
-left2, right2 = st.columns(2)
+        st.markdown(f"""
+        <div class="insight-box">
+        In the selected data, <b>{top_group}</b> has the highest average movement.
+        This does not prove a reason, but it gives a simple pattern to notice.
+        </div>
+        """, unsafe_allow_html=True)
 
+# ==================================================
+# TAB 2 - EVENTS
+# ==================================================
+with tab2:
+    c1, c2 = st.columns(2)
 
-with left2:
+    with c1:
+        st.markdown("### Gold Movement by Year")
+        year_move = filtered.groupby("Year", as_index=False)["Abs_Change"].mean()
+        fig_year = px.bar(
+            year_move,
+            x="Year",
+            y="Abs_Change",
+            text="Abs_Change",
+            template="plotly_white",
+            color="Abs_Change",
+            color_continuous_scale=["#d6dbe3", "#f1c75b", "#d4a017"]
+        )
+        fig_year.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+        fig_year.update_layout(
+            height=360,
+            margin=dict(l=10, r=10, t=10, b=10),
+            coloraxis_showscale=False,
+            xaxis_title="Year",
+            yaxis_title="Average Movement"
+        )
+        st.plotly_chart(fig_year, use_container_width=True)
 
-    st.subheader("Distribution of Gold Prices")
+    with c2:
+        st.markdown("### Gold Movement by Month")
+        month_move = filtered.groupby("Month", as_index=False)["Abs_Change"].mean()
+        fig_month = px.bar(
+            month_move,
+            x="Month",
+            y="Abs_Change",
+            text="Abs_Change",
+            template="plotly_white",
+            color="Abs_Change",
+            color_continuous_scale=["#d6dbe3", "#f1c75b", "#d4a017"]
+        )
+        fig_month.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+        fig_month.update_layout(
+            height=360,
+            margin=dict(l=10, r=10, t=10, b=10),
+            coloraxis_showscale=False,
+            xaxis_title="Month",
+            yaxis_title="Average Movement"
+        )
+        st.plotly_chart(fig_month, use_container_width=True)
 
-    # i color the histogram using Up and Down
-    # green means the price went up
-    # red means the price went down
+    st.markdown("### Event Type Comparison")
 
-    fig_hist = px.histogram(
-        filtered_data,
-        x="Price",
-        color="Direction",
-        nbins=30,
-        barmode="overlay",
-        opacity=0.72,
-        color_discrete_map={
-            "Up": GREEN,
-            "Down": RED
-        },
-        labels={
-            "Price": "Gold Price",
-            "count": "Number of Days"
-        }
-    )
+    compare1, compare2 = st.columns(2)
 
-    clean_chart(fig_hist)
+    with compare1:
+        infl_compare = filtered.groupby("Inflation_Event", as_index=False)["Abs_Change"].mean()
+        infl_compare["Label"] = infl_compare["Inflation_Event"].map({True: "Inflation Days", False: "Other Days"})
 
-    st.plotly_chart(
-        fig_hist,
-        use_container_width=True
-    )
+        fig_infl = px.bar(
+            infl_compare,
+            x="Label",
+            y="Abs_Change",
+            text="Abs_Change",
+            template="plotly_white",
+            color="Label",
+            color_discrete_map={
+                "Inflation Days": "#d4a017",
+                "Other Days": "#b8bec8"
+            }
+        )
+        fig_infl.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+        fig_infl.update_layout(
+            height=320,
+            showlegend=False,
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis_title="",
+            yaxis_title="Average Movement"
+        )
+        st.plotly_chart(fig_infl, use_container_width=True)
 
+    with compare2:
+        fed_compare = filtered.groupby("Fed_Event", as_index=False)["Abs_Change"].mean()
+        fed_compare["Label"] = fed_compare["Fed_Event"].map({True: "Fed Days", False: "Other Days"})
 
-with right2:
+        fig_fed = px.bar(
+            fed_compare,
+            x="Label",
+            y="Abs_Change",
+            text="Abs_Change",
+            template="plotly_white",
+            color="Label",
+            color_discrete_map={
+                "Fed Days": "#9a7a14",
+                "Other Days": "#b8bec8"
+            }
+        )
+        fig_fed.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+        fig_fed.update_layout(
+            height=320,
+            showlegend=False,
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis_title="",
+            yaxis_title="Average Movement"
+        )
+        st.plotly_chart(fig_fed, use_container_width=True)
 
-    st.subheader("Movement by Event Group")
+# ==================================================
+# TAB 3 - PATTERNS
+# ==================================================
+with tab3:
+    st.markdown("### Volume and Gold Movement")
 
-    # i calculate average movement for every group
-    # i give every group its own color because they mean different things
-
-    event_group_data = (
-        filtered_data
-        .groupby("Event_Group")["Abs_Change"]
-        .mean()
-        .reset_index()
-    )
-
-    fig_event = px.bar(
-        event_group_data,
-        x="Event_Group",
+    fig_scatter = px.scatter(
+        filtered,
+        x="Vol_K",
         y="Abs_Change",
         color="Event_Group",
-        text_auto=".2f",
+        template="plotly_white",
+        opacity=0.7,
         color_discrete_map={
-            "No Event": SOFT_GRAY,
-            "1-3 Events": GOLD,
-            "4+ Events": DARK_GOLD
+            "1-3 Events": "#d4a017",
+            "4+ Events": "#9a7a14",
+            "No Event": "#c2c8d1"
         },
-        labels={
-            "Event_Group": "Event Group",
-            "Abs_Change": "Average Movement %"
-        }
+        hover_data=["Date", "Price", "Change_percent", "Event_Count", "Direction"]
     )
-
-    fig_event.update_traces(
-        textposition="outside"
+    fig_scatter.update_layout(
+        height=420,
+        margin=dict(l=10, r=10, t=10, b=10),
+        xaxis_title="Trading Volume",
+        yaxis_title="Gold Movement %"
     )
+    st.plotly_chart(fig_scatter, use_container_width=True)
 
-    clean_chart(fig_event)
+    heat_left, heat_right = st.columns([1.3, 1])
 
-    fig_event.update_layout(
-        showlegend=False
-    )
+    with heat_left:
+        st.markdown("### Direction Share")
+        direction_share = filtered["Direction"].value_counts().reset_index()
+        direction_share.columns = ["Direction", "Count"]
 
-    st.plotly_chart(
-        fig_event,
-        use_container_width=True
-    )
-
-    # i write a small result under the chart
-    # so the user does not only see bars without understanding them
-
-    highest_event_group = event_group_data.loc[
-        event_group_data["Abs_Change"].idxmax(),
-        "Event_Group"
-    ]
-
-    st.caption(
-        f"In the selected data, {highest_event_group} "
-        "has the highest average movement."
-    )
-
-
-# --------------------------------------------------
-# third row
-# year and month
-# --------------------------------------------------
-
-left3, right3 = st.columns(2)
-
-
-with left3:
-
-    st.subheader("Gold Movement by Year")
-
-    year_data = (
-        filtered_data
-        .groupby("Year")["Abs_Change"]
-        .mean()
-        .reset_index()
-    )
-
-    # the bar color gets darker when the movement is higher
-    # this help the user find the highest year quickly
-
-    fig_year = px.bar(
-        year_data,
-        x="Year",
-        y="Abs_Change",
-        color="Abs_Change",
-        text_auto=".2f",
-        color_continuous_scale=[
-            "#F7EBC4",
-            GOLD,
-            DARK_GOLD
-        ],
-        labels={
-            "Year": "Year",
-            "Abs_Change": "Average Movement %"
-        }
-    )
-
-    fig_year.update_traces(
-        textposition="outside"
-    )
-
-    clean_chart(fig_year)
-
-    fig_year.update_layout(
-        coloraxis_showscale=False
-    )
-
-    st.plotly_chart(
-        fig_year,
-        use_container_width=True
-    )
-
-
-with right3:
-
-    st.subheader("Gold Movement by Month")
-
-    month_data = (
-        filtered_data
-        .groupby(["Month", "Month_Name"])["Abs_Change"]
-        .mean()
-        .reset_index()
-        .sort_values("Month")
-    )
-
-    fig_month = px.bar(
-        month_data,
-        x="Month_Name",
-        y="Abs_Change",
-        color="Abs_Change",
-        text_auto=".2f",
-        color_continuous_scale=[
-            "#E5EAF1",
-            LIGHT_GOLD,
-            GOLD
-        ],
-        labels={
-            "Month_Name": "Month",
-            "Abs_Change": "Average Movement %"
-        }
-    )
-
-    fig_month.update_traces(
-        textposition="outside"
-    )
-
-    clean_chart(fig_month)
-
-    fig_month.update_layout(
-        coloraxis_showscale=False
-    )
-
-    st.plotly_chart(
-        fig_month,
-        use_container_width=True
-    )
-
-
-# --------------------------------------------------
-# scatter plot
-# --------------------------------------------------
-
-st.subheader("Volume and Gold Movement")
-
-
-# every event group have a different color in the scatter
-# when i move the mouse on a point it show more information
-
-fig_scatter = px.scatter(
-    filtered_data,
-    x="Vol_K",
-    y="Abs_Change",
-    color="Event_Group",
-    hover_data={
-        "Date": "|%Y-%m-%d",
-        "Price": ":,.2f",
-        "Change_percent": ":.2f",
-        "Event_Count": True
-    },
-    color_discrete_map={
-        "No Event": SOFT_GRAY,
-        "1-3 Events": GOLD,
-        "4+ Events": DARK_GOLD
-    },
-    labels={
-        "Vol_K": "Trading Volume",
-        "Abs_Change": "Gold Movement %",
-        "Event_Group": "Event Group"
-    }
-)
-
-fig_scatter.update_traces(
-    marker=dict(
-        size=8,
-        opacity=0.65,
-        line=dict(
-            width=0.5,
-            color="white"
+        fig_direction = px.pie(
+            direction_share,
+            names="Direction",
+            values="Count",
+            hole=0.45,
+            color="Direction",
+            color_discrete_map={
+                "Up": "#5a9e6f",
+                "Down": "#c76b6b"
+            }
         )
-    )
-)
+        fig_direction.update_layout(
+            height=350,
+            margin=dict(l=10, r=10, t=10, b=10)
+        )
+        st.plotly_chart(fig_direction, use_container_width=True)
 
-clean_chart(fig_scatter, height=450)
+    with heat_right:
+        st.markdown("### Monthly Heatmap by Year")
+        heat = filtered.pivot_table(
+            index="Year",
+            columns="Month",
+            values="Abs_Change",
+            aggfunc="mean"
+        )
 
-st.plotly_chart(
-    fig_scatter,
-    use_container_width=True
-)
+        fig_heat = px.imshow(
+            heat,
+            text_auto=".2f",
+            aspect="auto",
+            color_continuous_scale=[
+                [0.0, "#f3f4f6"],
+                [0.5, "#f1c75b"],
+                [1.0, "#d4a017"]
+            ]
+        )
+        fig_heat.update_layout(
+            height=350,
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis_title="Month",
+            yaxis_title="Year"
+        )
+        st.plotly_chart(fig_heat, use_container_width=True)
 
+# ==================================================
+# TAB 4 - DATA TABLE
+# ==================================================
+with tab4:
+    st.markdown("### Biggest Gold Movement Days")
+    biggest = filtered.nlargest(10, "Abs_Change")[
+        ["Date", "Price", "Change_percent", "Abs_Change", "Event_Count", "Event_Group", "Direction"]
+    ].copy()
 
-# --------------------------------------------------
-# biggest movement table
-# --------------------------------------------------
+    biggest["Date"] = biggest["Date"].astype(str)
+    st.dataframe(biggest, use_container_width=True)
 
-st.subheader("Biggest Gold Movement Days")
+    with st.expander("Show filtered data"):
+        show_cols = [
+            "Date", "Price", "Open", "High", "Low", "Vol_K",
+            "Change_percent", "Event_Count", "Has_Event",
+            "Abs_Change", "Event_Group", "Direction",
+            "Year", "Month", "Inflation_Event", "Fed_Event"
+        ]
+        available_cols = [c for c in show_cols if c in filtered.columns]
+        st.dataframe(filtered[available_cols], use_container_width=True)
 
-
-# i select the 10 days with highest Abs_Change
-# after this i only keep the useful columns
-
-top_days = filtered_data.nlargest(
-    10,
-    "Abs_Change"
-)[
-    [
-        "Date",
-        "Price",
-        "Change_percent",
-        "Abs_Change",
-        "Event_Count",
-        "Event_Group",
-        "Direction"
-    ]
-].copy()
-
-
-# i remove the time because it was always 00:00:00
-# i also reset the index because old row numbers was confusing
-
-top_days["Date"] = (
-    top_days["Date"]
-    .dt.strftime("%Y-%m-%d")
-)
-
-top_days = top_days.reset_index(drop=True)
-
-
-# i rename the columns so the table is easier to read
-
-top_days = top_days.rename(
-    columns={
-        "Change_percent": "Change Percent",
-        "Abs_Change": "Absolute Change",
-        "Event_Count": "Event Count",
-        "Event_Group": "Event Group"
-    }
-)
-
-
-st.dataframe(
-    top_days,
-    use_container_width=True,
-    hide_index=True
-)
-
-
-# the full filtered data is hidden inside this part
-# the user can open it only if they want to see all rows
-
-with st.expander("Show filtered data"):
-
-    full_data = filtered_data.copy()
-
-    full_data["Date"] = (
-        full_data["Date"]
-        .dt.strftime("%Y-%m-%d")
-    )
-
-    st.dataframe(
-        full_data,
-        use_container_width=True,
-        hide_index=True
-    )
-
-
-# final note because the charts only show relationships
-# they do not prove the event caused the price change
-
-st.caption(
-    "This dashboard shows patterns and comparisons in the dataset. "
-    "It does not prove that economic events directly caused every gold movement."
-)
+st.markdown("""
+<div class="small-note">
+This dashboard shows patterns and comparisons in the dataset. It does not prove that economic events directly caused every gold price movement.
+</div>
+""", unsafe_allow_html=True)
